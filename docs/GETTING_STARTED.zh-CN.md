@@ -89,6 +89,12 @@ npm
 
 如果未来同一台机还要跑 Chrome Listener、Xvfb、noVNC，建议 4 GB RAM。
 
+### Docker 基础镜像
+
+Cove Resonance 依赖带 native runtime 的 `node-nim`。Docker 部署建议使用 **Debian/glibc** 基础镜像；仓库默认 Dockerfile 使用 `node:22-slim`。
+
+不建议使用 Alpine/musl 作为运行环境。外部部署反馈显示，Alpine 下可能出现 NIM bootstrap timeout 或 realtime 初始化失败，而切换到 Debian slim 后恢复正常。
+
 > 如果 VPS 还要直接登录 ChatGPT，请先确认 VPS 所在地区是 ChatGPT 官方支持地区。Bridge 本身不要求和 Listener 在同一台机器。
 
 ---
