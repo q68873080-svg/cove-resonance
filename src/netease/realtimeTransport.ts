@@ -116,6 +116,8 @@ type NodeNimModule = {
   ChatRoom: new () => ChatRoomLike;
   NIMClient: new () => NimClientLike;
   NIMPlugin: new () => NimPluginLike;
+  V2NIMClient: new () => any;
+  V2NIMChatroomClient: typeof import("node-nim").V2NIMChatroomClient;
 };
 
 type PendingEnter = {
@@ -416,6 +418,8 @@ async function loadNodeNim(): Promise<NodeNimModule> {
 
 export class NeteaseRealtimeTransport {
   private chatroom: ChatRoomLike | null = null;
+private v2Client: any | null = null;
+private v2Chatroom: any | null = null;
   private runtimeReady = false;
   private readonly pendingSends = new Map<string, PendingSend>();
   private roomNumber: number | null = null;
@@ -497,7 +501,54 @@ export class NeteaseRealtimeTransport {
   // starve the whole Bridge process. The child only obtains the fresh ChatRoom
   // enter ticket; the parent kills it afterwards so the OS tears down all
   // native bootstrap threads without depending on SDK cleanup.
-  private async requestEnterTicket(
+    private ensureV2Runtime(nim: NodeNimModule): void {
+    if (this.v2Client && this.v2Chatroom) return;
+
+    const chatroomInitError = nim.V2NIMChatroomClient.init({
+      appkey: NIM_APP_KEY,
+      basicOption: {
+        useHttps: true,
+      },
+      linkOption: {
+        tlsOption: {
+          sslConnection: true,
+        },
+      },
+    });
+
+    if (chatroomInitError) {
+      throw new Error(
+        `V2 ChatRoom init failed code=${chatroomInitError.code ?? "unknown"} desc=${chatroomInitError.desc ?? "unknown"}`,
+      );
+    }
+
+    const v2Client = new nim.V2NIMClient();
+
+    const clientInitError = v2Client.init({
+      appkey: NIM_APP_KEY,
+      basicOption: {
+        useHttps: true,
+      },
+      linkOption: {
+        tlsOption: {
+          sslConnection: true,
+        },
+      },
+    });
+
+    if (clientInitError) {
+      throw new Error(
+        `V2 Client init failed code=${clientInitError.code ?? "unknown"} desc=${clientInitError.desc ?? "unknown"}`,
+      );
+    }
+
+    this.v2Client = v2Client;
+    this.v2Chatroom = nim.V2NIMChatroomClient.newInstance();
+
+    console.log("NetEase NIM V2 runtime initialized");
+  }
+
+private async requestEnterTicket(
     credentials: RealtimeCredentials,
     roomNumber: number,
   ): Promise<[number, string]> {
