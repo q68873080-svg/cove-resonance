@@ -18,6 +18,7 @@ type NimPluginLike = {
   initEventHandlers(): void;
   chatRoomRequestEnterAsync(roomId: number, cb: null, extension: string): Promise<[number, string]>;
 };
+
 type NodeNimModule = {
   NIMClient: new () => NimClientLike;
   NIMPlugin: new () => NimPluginLike;
@@ -32,48 +33,91 @@ function readNumber(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function run(request: BootstrapRequest): Promise<[number, string]> {
   await mkdir(request.dataDir, { recursive: true });
+
   const imported = await import("node-nim");
   const candidate = (imported as { default?: unknown }).default ?? imported;
   const nim = candidate as Partial<NodeNimModule>;
+
   if (typeof nim.NIMClient !== "function" || typeof nim.NIMPlugin !== "function") {
     throw new Error("node-nim NIMClient/NIMPlugin exports are unavailable");
   }
 
   const client = new nim.NIMClient();
   const plugin = new nim.NIMPlugin();
+
   const config = {
     database_encrypt_key_: request.appKey,
     use_https_: true,
     sdk_log_level_: 2,
+    login_max_retry_times_: 6,
+    need_update_lbs_befor_relogin_: true,
+    ip_protocol_version_: 0,
   };
 
   if (!client.init(request.appKey, request.dataDir + "/", "", config)) {
     throw new Error("NIM bootstrap client initialization failed");
   }
+
   client.initEventHandlers();
   plugin.initEventHandlers();
 
-  const [loginResult] = await client.login(
-    request.appKey,
-    request.accId,
-    request.token,
+  let lastCode: number | null = null;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const [loginResult] = await client.login(
+      request.appKey,
+      request.accId,
+      request.token,
+      null,
+      "",
+    );
+
+    const result = asRecord(loginResult);
+    const loginCode = readNumber(result.res_code_);
+    lastCode = loginCode;
+
+    if (loginCode === 200) break;
+
+    if (loginCode !== 415 || attempt === 3) {
+      throw new Error(
+        "NIM login failed" +
+        (loginCode === null ? "" : " code=" + loginCode),
+      );
+    }
+
+    console.warn(
+      `NIM bootstrap login connection error (415), retrying attempt ${attempt + 1}/3`,
+    );
+
+    await sleep(2500 * attempt);
+  }
+
+  if (lastCode !== 200) {
+    throw new Error(
+      "NIM login failed" +
+      (lastCode === null ? "" : " code=" + lastCode),
+    );
+  }
+
+  return await plugin.chatRoomRequestEnterAsync(
+    request.roomNumber,
     null,
     "",
   );
-  const loginCode = readNumber(asRecord(loginResult).res_code_);
-  if (loginCode !== 200) {
-    throw new Error("NIM login failed" + (loginCode === null ? "" : " code=" + loginCode));
-  }
-
-  return await plugin.chatRoomRequestEnterAsync(request.roomNumber, null, "");
 }
 
 let started = false;
+
 process.on("message", (raw: unknown) => {
   if (started) return;
   started = true;
+
   void run(raw as BootstrapRequest)
     .then((result) => {
       process.send?.({ ok: true, result });
@@ -86,7 +130,6 @@ process.on("message", (raw: unknown) => {
     });
 });
 
-// Never perform node-nim cleanup in this process. The parent kills this
-// short-lived process after it receives a result, so the OS tears down all
-// native NIM threads even if the SDK cleanup path is unhealthy.
+// Never perform node-nim cleanup in this process.
+// The parent kills this short-lived process after it receives a result.
 setInterval(() => {}, 60_000);
