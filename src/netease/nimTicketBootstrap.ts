@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+﻿import { mkdir } from "node:fs/promises";
 
 type BootstrapRequest = {
   appKey: string;
@@ -67,44 +67,22 @@ async function run(request: BootstrapRequest): Promise<[number, string]> {
   client.initEventHandlers();
   plugin.initEventHandlers();
 
-  let lastCode: number | null = null;
+  const [loginResult] = await client.login(
+    request.appKey,
+    request.accId,
+    request.token,
+    null,
+    "",
+  );
 
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const [loginResult] = await client.login(
-      request.appKey,
-      request.accId,
-      request.token,
-      null,
-      "",
-    );
-
-    const result = asRecord(loginResult);
-    const loginCode = readNumber(result.res_code_);
-    lastCode = loginCode;
-
-    if (loginCode === 200) break;
-
-    if (loginCode !== 415 || attempt === 3) {
-      throw new Error(
-        "NIM login failed" +
-        (loginCode === null ? "" : " code=" + loginCode),
-      );
-    }
-
-    console.warn(
-      `NIM bootstrap login connection error (415), retrying attempt ${attempt + 1}/3`,
-    );
-
-    await sleep(2500 * attempt);
-  }
-
-  if (lastCode !== 200) {
+  const result = asRecord(loginResult);
+  const loginCode = readNumber(result.res_code_);
+  if (loginCode !== 200) {
     throw new Error(
       "NIM login failed" +
-      (lastCode === null ? "" : " code=" + lastCode),
+      (loginCode === null ? "" : " code=" + loginCode),
     );
   }
-
   return await plugin.chatRoomRequestEnterAsync(
     request.roomNumber,
     null,
