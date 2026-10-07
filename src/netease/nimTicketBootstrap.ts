@@ -51,14 +51,14 @@ async function run(request: BootstrapRequest): Promise<[number, string]> {
   const client = new nim.NIMClient();
   const plugin = new nim.NIMPlugin();
 
-  const config = {
-    database_encrypt_key_: request.appKey,
-    use_https_: true,
-    sdk_log_level_: 2,
-    login_max_retry_times_: 6,
-    need_update_lbs_befor_relogin_: true,
-    ip_protocol_version_: 0,
-  };
+const config = {
+  database_encrypt_key_: request.appKey,
+  use_https_: true,
+  sdk_log_level_: 2,
+  login_max_retry_times_: 6,
+  need_update_lbs_befor_relogin_: true,
+  ip_protocol_version_: 0,
+};
 
   if (!client.init(request.appKey, request.dataDir + "/", "", config)) {
     throw new Error("NIM bootstrap client initialization failed");
