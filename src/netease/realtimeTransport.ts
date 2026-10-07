@@ -1,4 +1,4 @@
-﻿import { fork } from "node:child_process";
+import { fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -1028,6 +1028,18 @@ async sendChatRoomText(text: string): Promise<RealtimeChatSendResult> {
 
   try {
     const result = await v2Service.sendMessage(message, {});
+      try {
+        const history = await v2Service.getMessageList({ limit: 20 });
+        console.log("NIM V2 chatroom history after send:", history.map((item: any) => ({
+          messageClientId: item.messageClientId,
+          senderId: item.senderId,
+          messageType: item.messageType,
+          text: item.text,
+          createTime: item.createTime,
+        })));
+      } catch (historyError) {
+        console.error("NIM V2 chatroom history query failed:", historyError);
+      }
 
     console.log("NIM V2 chatroom message sent:", result);
 
