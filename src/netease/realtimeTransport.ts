@@ -482,6 +482,7 @@ private v2Chatroom: any | null = null;
     if (this.runtimeReady) return;
 
     const nim = await loadNodeNim();
+    this.ensureV2Runtime(nim);
     const chatroom = new nim.ChatRoom();
     console.log("NIM diag: before chatroom.init");
     if (!chatroom.init("", "")) {
@@ -544,6 +545,26 @@ private v2Chatroom: any | null = null;
 
     this.v2Client = v2Client;
     this.v2Chatroom = nim.V2NIMChatroomClient.newInstance();
+const v2Service = this.v2Chatroom.getChatroomService();
+
+v2Service.on("receiveMessages", (messages: unknown[]) => {
+  console.log(`NIM V2 receiveMessages count=${messages.length}`);
+  console.log(
+  "NIM V2 receiveMessages:",
+  messages.map((message) => {
+    const item = asRecord(message);
+    return {
+       messageType: readNumber(item.messageType),
+       subType: readNumber(item.subType),
+       senderId: readString(item.senderId),
+       messageClientId: readString(item.messageClientId),
+       text: readString(item.text),
+       serverExtension: readString(item.serverExtension),
+       callbackExtension: readString(item.callbackExtension),
+     };
+   }),
+  );
+});
 
     console.log("NetEase NIM V2 runtime initialized");
   }
@@ -794,7 +815,39 @@ private async requestEnterTicket(
     };
 
     await this.ensureRuntime();
+    this.ensureV2Runtime(await loadNodeNim());
     const chatroom = this.chatroom;
+    const v2Client = this.v2Client;
+    const v2Chatroom = this.v2Chatroom;
+if (!v2Client || !v2Chatroom) {
+  throw new Error("NIM V2 runtime is unavailable");
+}
+
+const loginService = v2Client.getLoginService();
+const loginResult = await loginService.login(
+  options.credentials.accId,
+  options.credentials.token,
+  {},
+);
+const chatroomLinks = await loginService.getChatroomLinkAddress(options.chatRoomId);
+if (chatroomLinks.length === 0) {
+  throw new Error("NIM V2 chatroom link address is unavailable");
+}
+console.log(`NIM V2 chatroom links: ${chatroomLinks.join(", ")}`);
+
+const v2EnterResult = await v2Chatroom.enter(options.chatRoomId, {
+  accountId: options.credentials.accId,
+  token: options.credentials.token,
+  roomNick: options.memberProfile?.nick?.trim() || "cove-resonance",
+  __linkProvider: chatroomLinks,
+});
+console.log("NIM V2 chatroom enter result:", v2EnterResult);
+if (v2EnterResult) {
+  this.activeMemberProfile = options.memberProfile ?? null;
+  this.status.connected = true;
+  this.status.lastError = null;
+  return;
+}
     if (!chatroom) throw new Error("NIM realtime runtime is unavailable");
 
     if (this.roomNumber !== null && this.roomNumber !== roomNumber) {
